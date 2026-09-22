@@ -6,15 +6,21 @@
   "scripts": {
     "build": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",
-    "evaluate": "tsx src/cli/evaluate.ts"
+    "evaluate": "tsx src/cli/evaluate.ts",
+    "start:api": "tsx src/api/server.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mongodb": "^7.6.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.10.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
