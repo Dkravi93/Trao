@@ -1,0 +1,32 @@
+[
+  {
+    "id": "eval-frontend",
+    "jd": "Frontend Engineer\nRequired: TypeScript and accessible React interfaces.",
+    "company_url": "https://example.com",
+    "days": 3
+  },
+  {
+    "id": "eval-backend",
+    "jd": "Backend Engineer\nRequired: Node.js APIs and PostgreSQL. Nice to have distributed systems.",
+    "company_url": "https://example.com",
+    "days": 5
+  },
+  {
+    "id": "eval-behavioural",
+    "jd": "Product Engineer\nRequired: collaboration and communicating tradeoffs.",
+    "company_url": "https://example.com",
+    "days": 2
+  },
+  {
+    "id": "eval-thin-stub",
+    "jd": "A short posting",
+    "company_url": "https://example.com",
+    "days": 1
+  },
+  {
+    "id": "eval-invalid-url",
+    "jd": "A short posting",
+    "company_url": "not a URL",
+    "days": 1
+  }
+]

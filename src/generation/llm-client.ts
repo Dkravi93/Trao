@@ -27,10 +27,11 @@ export class LlmClient {
   get enabled(): boolean { return this.configuration !== null; }
   get provider(): LlmProvider | null { return this.configuration?.provider ?? null; }
 
-  async json<T>(system: string, prompt: string, schema: z.ZodType<T>): Promise<T> {
+  async json<T>(system: string, prompt: string, schema: z.ZodType<T>, label = "LlmClient"): Promise<T> {
     if (!this.configuration) throw new Error("No LLM provider is configured.");
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      let content: string | undefined;
       try {
         const response = await fetch(`${this.configuration.baseUrl.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
@@ -38,10 +39,17 @@ export class LlmClient {
           body: JSON.stringify({ model: this.configuration.model, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
         });
         if (!response.ok) throw new Error(`${this.configuration.provider} returned HTTP ${response.status}.`);
-        const content = completionSchema.parse(await response.json()).choices[0]?.message.content;
+        content = completionSchema.parse(await response.json()).choices[0]?.message.content;
         if (!content) throw new Error("LLM returned no message content.");
         return schema.parse(parseJson(content));
       } catch (error) {
+        // content is only set once the completion itself succeeded, so this
+        // only fires for a genuine shape mismatch (bad JSON or wrong schema),
+        // not for network/HTTP failures — exactly the case that was
+        // otherwise invisible beyond a zod error path.
+        if (content !== undefined) {
+          console.warn(`[${label}] response did not match the expected shape (attempt ${attempt + 1}):`, content.slice(0, 800));
+        }
         lastError = error;
         if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }

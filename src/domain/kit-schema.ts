@@ -14,6 +14,7 @@ export const questionSchema = z.object({
   prompt: z.string().min(1),
   answer_outline: z.string(),
   difficulty: z.number().int().min(1).max(3),
+  pinned: z.boolean().optional(),
 });
 
 export const flashcardSchema = z.object({
@@ -21,6 +22,7 @@ export const flashcardSchema = z.object({
   front: z.string().min(1),
   back: z.string().min(1),
   requirement_ids: z.array(z.string().min(1)),
+  pinned: z.boolean().optional(),
 });
 
 export const scheduleDaySchema = z.object({
@@ -44,6 +46,7 @@ export const kitSchema = z.object({
     summary: z.string(),
     what_they_do: z.string(),
     sources: z.array(z.string()),
+    pinned: z.boolean().optional(),
   }),
   role: z.object({
     title: z.string(),
@@ -69,6 +72,7 @@ export const kitSchema = z.object({
 
 export type Requirement = z.infer<typeof requirementSchema>;
 export type Question = z.infer<typeof questionSchema>;
+export type Flashcard = z.infer<typeof flashcardSchema>;
 export type Kit = z.infer<typeof kitSchema>;
 
 export function validateKit(kit: unknown): Kit {

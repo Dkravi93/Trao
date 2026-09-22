@@ -2,7 +2,7 @@ import { allocateSchedule } from "../domain/schedule.js";
 import { findUncoveredMustHaveRequirements } from "../domain/coverage.js";
 import { validateKit, type Kit, type Requirement } from "../domain/kit-schema.js";
 import type { EvaluationCase } from "../cli/contracts.js";
-import { extractRole, generateQuestions } from "../generation/llm-generation.js";
+import { extractRole, generateCompanyBrief, generateQuestions } from "../generation/llm-generation.js";
 import { generateQuestionsForRequirements } from "../generation/questions.js";
 import { pageText, researchCompany } from "../retrieval/company-research.js";
 
@@ -29,6 +29,7 @@ export async function generateKitForCase(input: EvaluationCase): Promise<Kit> {
   const schedule = allocateSchedule(requirements, questions, input.days);
   const evidence = research.pages.map(pageText).filter(Boolean);
   const homepageText = evidence[0] ?? "";
+  const breif = await generateCompanyBrief(evidence);
 
   return validateKit({
     source: {
@@ -41,8 +42,7 @@ export async function generateKitForCase(input: EvaluationCase): Promise<Kit> {
       pages_used: research.pages.map((page) => page.url),
     },
     company_brief: {
-      summary: homepageText ? homepageText.slice(0, 600) : "No company information could be retrieved.",
-      what_they_do: homepageText ? homepageText.slice(0, 300) : "No company facts were inferred because research was unavailable.",
+      ...breif,
       sources: research.pages.map((page) => page.url),
     },
     role: { title: role.title, seniority: role.seniority, responsibilities: role.responsibilities, requirements },

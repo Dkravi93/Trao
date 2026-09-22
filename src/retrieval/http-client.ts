@@ -12,15 +12,16 @@ export class RetrievalError extends Error {
   }
 }
 
-const maxBytes = 1_000_000;
+const maxBytes = 3_000_000;
 const attempts = 3;
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export async function fetchText(url: URL, options: { timeoutMs?: number } = {}): Promise<RetrievedPage> {
+export async function fetchText(url: URL, options: { timeoutMs?: number; userAgent?: string } = {}): Promise<RetrievedPage> {
   const timeoutMs = options.timeoutMs ?? 8_000;
+  const userAgent = options.userAgent ?? "TraoInterviewPrepBot/0.1 (respectful research crawler)";
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const controller = new AbortController();
@@ -32,7 +33,7 @@ export async function fetchText(url: URL, options: { timeoutMs?: number } = {}):
         response = await fetch(requestUrl, {
           signal: controller.signal,
           redirect: "manual",
-          headers: { "user-agent": "TraoInterviewPrepBot/0.1 (respectful research crawler)" },
+          headers: { "user-agent": userAgent },
         });
         if (![301, 302, 303, 307, 308].includes(response.status)) break;
         const location = response.headers.get("location");
@@ -45,12 +46,12 @@ export async function fetchText(url: URL, options: { timeoutMs?: number } = {}):
       }
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
       const contentLength = Number(response.headers.get("content-length") ?? 0);
-      if (contentLength > maxBytes) throw new RetrievalError("RESPONSE_TOO_LARGE", "The remote page exceeds the 1 MB limit.");
+      if (contentLength > maxBytes) throw new RetrievalError("RESPONSE_TOO_LARGE", "The remote page exceeds the retrieval size limit.");
       if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
         throw new RetrievalError("UNSUPPORTED_CONTENT", "The remote page is not HTML or plain text.");
       }
       const body = await response.text();
-      if (Buffer.byteLength(body, "utf8") > maxBytes) throw new RetrievalError("RESPONSE_TOO_LARGE", "The remote page exceeds the 1 MB limit.");
+      if (Buffer.byteLength(body, "utf8") > maxBytes) throw new RetrievalError("RESPONSE_TOO_LARGE", "The remote page exceeds the retrieval size limit.");
       if (!response.ok) throw new RetrievalError("COMPANY_UNREACHABLE", `Remote server returned HTTP ${response.status}.`);
       return { url: requestUrl.href, status: response.status, contentType, body };
     } catch (error) {

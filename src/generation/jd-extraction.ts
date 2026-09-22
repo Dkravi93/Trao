@@ -12,13 +12,34 @@ const niceSignals = /\b(preferred|bonus|nice to have|plus|ideally|desirable)\b/i
 const behaviouralSignals = /\b(mentor|communicat|collaborat|stakeholder|leadership|teamwork|coach|influence)\b/i;
 const technicalSignals = /\b(api|react|node|typescript|javascript|python|java|sql|database|cloud|aws|azure|gcp|docker|kubernetes|testing|system|frontend|backend|software|engineering|graphql)\b/i;
 
+const bulletStart = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
 function cleanLine(line: string): string {
   return line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").replace(/\s+/g, " ").trim();
 }
 
+// A wrapped bullet — one requirement split across two raw lines by the
+// source formatting — should stay one requirement, not become two. Merge a
+// non-bullet continuation line back onto the previous line, but only when
+// that previous line was itself a bullet, so plain paragraph text (titles,
+// intro sentences) is left untouched.
+function joinWrappedLines(rawLines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of rawLines) {
+    const trimmed = line.trim();
+    const previous = joined[joined.length - 1];
+    if (trimmed && !bulletStart.test(line) && previous !== undefined && bulletStart.test(previous)) {
+      joined[joined.length - 1] = `${previous} ${trimmed}`;
+      continue;
+    }
+    joined.push(line);
+  }
+  return joined;
+}
+
 function splitCandidates(jd: string): string[] {
-  return jd.replace(/\r/g, "").split("\n")
-    .flatMap((line) => line.includes(";") ? line.split(";") : [line])
+  return joinWrappedLines(jd.replace(/\r/g, "").split("\n"))
+    .flatMap((line) => line.split(/(?<=[.;])\s+/))
     .map(cleanLine)
     .filter((line) => line.length >= 12 && line.length <= 400);
 }

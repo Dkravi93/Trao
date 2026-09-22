@@ -12,6 +12,10 @@ function htmlToText(html: string): string {
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -39,6 +43,14 @@ function rankLink(link: { url: URL; label: string }): number {
   const value = `${link.url.pathname} ${link.label}`.toLowerCase();
   const terms = ["career", "hiring", "interview", "jobs", "culture", "about", "company", "team", "handbook", "engineering"];
   return terms.reduce((score, term) => score + (value.includes(term) ? 10 : 0), 0);
+}
+
+// NEW: turns a hostname like "about.gitlab.com" into a plain company name like "gitlab"
+// so the interview-discussion search query is meaningful instead of literally
+// searching for the hostname string.
+function guessCompanyName(hostname: string): string {
+  const parts = hostname.replace(/^www\./, "").split(".");
+  return parts.length > 2 ? (parts[1] ?? parts[0] ?? "") : (parts[0] ?? "");
 }
 
 async function isAllowedByRobots(origin: URL): Promise<boolean> {
@@ -80,7 +92,8 @@ export async function researchCompany(companyUrl: string): Promise<ResearchResul
     }
   }));
 
-  const interviewDiscussionUrls = await findInterviewDiscussion(startUrl.hostname);
+  // CHANGED: was findInterviewDiscussion(startUrl.hostname)
+  const interviewDiscussionUrls = await findInterviewDiscussion(guessCompanyName(startUrl.hostname));
   if (interviewDiscussionUrls.length === 0) warnings.push("No public interview-process discussion was found.");
   return { pages: [homepage, ...extraPages.filter((page): page is RetrievedPage => page !== null)], warnings, interviewDiscussionUrls };
 }
