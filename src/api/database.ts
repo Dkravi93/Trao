@@ -12,6 +12,11 @@ export interface SessionDocument {
   expiresAt: Date;
   createdAt: Date;
 }
+export interface RevokedAccessTokenDocument {
+  jti: string;
+  expiresAt: Date;
+  revokedAt: Date;
+}
 export interface KitDocument {
   userId: string;
   fingerprint: string;
@@ -26,6 +31,7 @@ export interface KitDocument {
 export interface Database {
   users: Collection<UserDocument>;
   sessions: Collection<SessionDocument>;
+  revokedAccessTokens: Collection<RevokedAccessTokenDocument>;
   kits: Collection<KitDocument>;
   close(): Promise<void>;
 }
@@ -35,15 +41,18 @@ export async function connectDatabase(mongoUri: string): Promise<Database> {
   await client.connect();
   const database: Db = client.db();
   const users = database.collection<UserDocument>("users");
-  const sessions = database.collection<SessionDocument>("sessions");
+  const sessions = database.collection<SessionDocument>("refresh_sessions");
+  const revokedAccessTokens = database.collection<RevokedAccessTokenDocument>("revoked_access_tokens");
   const kits = database.collection<KitDocument>("kits");
   await Promise.all([
     users.createIndex({ email: 1 }, { unique: true }),
     sessions.createIndex({ tokenHash: 1 }, { unique: true }),
     sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    revokedAccessTokens.createIndex({ jti: 1 }, { unique: true }),
+    revokedAccessTokens.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     kits.createIndex({ userId: 1, fingerprint: 1 }, { unique: true }),
   ]);
-  return { users, sessions, kits, close: () => client.close() };
+  return { users, sessions, revokedAccessTokens, kits, close: () => client.close() };
 }
 
 export function publicUser(user: WithId<UserDocument>): { id: string; email: string } {

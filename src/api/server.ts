@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createApiApp } from "./app.js";
 import { getApiConfig } from "./config.js";
 import { connectDatabase } from "./database.js";

@@ -9,15 +9,19 @@ import type { ApiConfig } from "./config.js";
 import type { Database, KitDocument } from "./database.js";
 import { publicUser } from "./database.js";
 import { hashPassword, verifyPassword } from "./auth/passwords.js";
-import { createSession, revokeSession, sessionCookie, userIdFromSession } from "./auth/sessions.js";
+import { accessCookie, createRefreshSession, isAccessTokenRevoked, issueAccessToken, refreshCookie, revokeAccessToken, revokeRefreshSession, rotateRefreshSession, verifyAccessToken, type AccessTokenClaims } from "./auth/sessions.js";
 
-interface AuthenticatedRequest extends Request { userId?: string; }
+interface AuthenticatedRequest extends Request { userId?: string; accessClaims?: AccessTokenClaims; }
 const credentialsSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(12).max(128) });
 const createKitSchema = z.object({ jd: z.string().min(1).max(50_000), company_url: z.string().url().max(2_048), days: z.number().int().min(1).max(60) });
 
 function cookieValue(request: Request, name: string): string | undefined {
   const item = request.headers.cookie?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
   return item ? decodeURIComponent(item.slice(name.length + 1)) : undefined;
+}
+function accessTokenFrom(request: Request): string | undefined {
+  const authorization = request.headers.authorization;
+  return authorization?.startsWith("Bearer ") ? authorization.slice(7) : cookieValue(request, accessCookie.name);
 }
 function fingerprint(input: z.infer<typeof createKitSchema>): string {
   return createHash("sha256").update(`${input.jd}\u0000${input.company_url}\u0000${input.days}`).digest("hex");
@@ -42,15 +46,21 @@ export function createApiApp(database: Database, config: ApiConfig) {
 
   const requireAuth = async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
     try {
-      const userId = await userIdFromSession(database.sessions, cookieValue(request, sessionCookie.name), config.sessionSecret);
-      if (!userId) return response.status(401).json({ error: { code: "UNAUTHENTICATED", message: "Please sign in." } });
-      request.userId = userId;
+      const claims = verifyAccessToken(accessTokenFrom(request) ?? "", config.sessionSecret);
+      if (!claims || await isAccessTokenRevoked(database.revokedAccessTokens, claims.jti)) return response.status(401).json({ error: { code: "UNAUTHENTICATED", message: "Please sign in." } });
+      request.userId = claims.sub;
+      request.accessClaims = claims;
       return next();
     } catch (error) { return next(error); }
   };
-  const issueSession = async (response: Response, userId: string) => {
-    const token = await createSession(database.sessions, userId, config.sessionSecret);
-    response.cookie(sessionCookie.name, token, { httpOnly: true, secure: config.isProduction, sameSite: "lax", maxAge: sessionCookie.maxAge, path: "/" });
+  const cookieOptions = (maxAge: number, path: string) => ({ httpOnly: true, secure: config.isProduction, sameSite: "lax" as const, maxAge, path });
+  const issueTokenPair = async (response: Response, userId: string) => {
+    response.cookie(accessCookie.name, issueAccessToken(userId, config.sessionSecret), cookieOptions(accessCookie.maxAge, accessCookie.path));
+    response.cookie(refreshCookie.name, await createRefreshSession(database.sessions, userId, config.sessionSecret), cookieOptions(refreshCookie.maxAge, refreshCookie.path));
+  };
+  const issueAccessAndRefresh = (response: Response, userId: string, refreshToken: string) => {
+    response.cookie(accessCookie.name, issueAccessToken(userId, config.sessionSecret), cookieOptions(accessCookie.maxAge, accessCookie.path));
+    response.cookie(refreshCookie.name, refreshToken, cookieOptions(refreshCookie.maxAge, refreshCookie.path));
   };
 
   app.get("/health", (_request, response) => response.json({ status: "ok" }));
@@ -58,7 +68,7 @@ export function createApiApp(database: Database, config: ApiConfig) {
     try {
       const input = credentialsSchema.parse(request.body);
       const created = await database.users.insertOne({ email: input.email.toLowerCase(), passwordHash: await hashPassword(input.password), createdAt: new Date() });
-      await issueSession(response, created.insertedId.toHexString());
+      await issueTokenPair(response, created.insertedId.toHexString());
       response.status(201).json({ user: { id: created.insertedId.toHexString(), email: input.email.toLowerCase() } });
     } catch (error) { next(error); }
   });
@@ -67,16 +77,27 @@ export function createApiApp(database: Database, config: ApiConfig) {
       const input = credentialsSchema.parse(request.body);
       const user = await database.users.findOne({ email: input.email.toLowerCase() });
       if (!user || !(await verifyPassword(input.password, user.passwordHash))) return response.status(401).json({ error: { code: "INVALID_CREDENTIALS", message: "Email or password is incorrect." } });
-      await issueSession(response, user._id.toHexString());
+      await issueTokenPair(response, user._id.toHexString());
       return response.json({ user: publicUser(user) });
     } catch (error) { return next(error); }
   });
   app.post("/auth/logout", async (request, response, next) => {
     try {
-      await revokeSession(database.sessions, cookieValue(request, sessionCookie.name), config.sessionSecret);
-      response.clearCookie(sessionCookie.name, { httpOnly: true, secure: config.isProduction, sameSite: "lax", path: "/" });
+      const claims = verifyAccessToken(accessTokenFrom(request) ?? "", config.sessionSecret);
+      if (claims) await revokeAccessToken(database.revokedAccessTokens, claims);
+      await revokeRefreshSession(database.sessions, cookieValue(request, refreshCookie.name), config.sessionSecret);
+      response.clearCookie(accessCookie.name, cookieOptions(0, accessCookie.path));
+      response.clearCookie(refreshCookie.name, cookieOptions(0, refreshCookie.path));
       response.status(204).end();
     } catch (error) { next(error); }
+  });
+  app.post("/auth/refresh", async (request, response, next) => {
+    try {
+      const rotated = await rotateRefreshSession(database.sessions, cookieValue(request, refreshCookie.name), config.sessionSecret);
+      if (!rotated) return response.status(401).json({ error: { code: "INVALID_REFRESH_TOKEN", message: "Please sign in again." } });
+      issueAccessAndRefresh(response, rotated.userId, rotated.token);
+      return response.status(204).end();
+    } catch (error) { return next(error); }
   });
   app.get("/auth/me", requireAuth, async (request: AuthenticatedRequest, response, next) => {
     try {
