@@ -1,0 +1,14 @@
+[
+  {
+    "id": "smoke-01",
+    "jd": "Frontend Engineer\nRequired: TypeScript and accessible React interfaces.",
+    "company_url": "https://example.com",
+    "days": 3
+  },
+  {
+    "id": "smoke-invalid-url",
+    "jd": "A short posting",
+    "company_url": "not a URL",
+    "days": 1
+  }
+]
