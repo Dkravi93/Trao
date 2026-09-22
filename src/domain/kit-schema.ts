@@ -61,6 +61,10 @@ export const kitSchema = z.object({
     uncovered_requirement_ids: z.array(z.string()),
     passes: z.number().int().min(1),
   }),
+  research: z.object({
+    warnings: z.array(z.string()),
+    interview_discussion_urls: z.array(z.string()),
+  }).optional(),
 });
 
 export type Requirement = z.infer<typeof requirementSchema>;

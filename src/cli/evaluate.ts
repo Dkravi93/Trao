@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 import { ZodError } from "zod";
 import { generateKitForCase } from "../application/generate-kit.js";
 import { evaluationInputSchema, evaluationOutputSchema } from "./contracts.js";
+import { RetrievalError } from "../retrieval/http-client.js";
+import { UnsafeUrlError } from "../retrieval/url-safety.js";
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -21,11 +23,12 @@ async function main(): Promise<void> {
     try {
       return { id: item.id, status: "ok" as const, kit: await generateKitForCase(item), error: null };
     } catch (error) {
+      const code = error instanceof RetrievalError ? error.code : error instanceof UnsafeUrlError ? "INVALID_COMPANY_URL" : "GENERATION_FAILED";
       return {
         id: item.id,
         status: "failed" as const,
         kit: null,
-        error: { code: "GENERATION_FAILED", message: error instanceof Error ? error.message : "Unknown error" },
+        error: { code, message: error instanceof Error ? error.message : "Unknown error" },
       };
     }
   }));
