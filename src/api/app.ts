@@ -14,6 +14,7 @@ import { accessCookie, createRefreshSession, isAccessTokenRevoked, issueAccessTo
 interface AuthenticatedRequest extends Request { userId?: string; accessClaims?: AccessTokenClaims; }
 const credentialsSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(12).max(128) });
 const createKitSchema = z.object({ jd: z.string().min(1).max(50_000), company_url: z.string().url().max(2_048), days: z.number().int().min(1).max(60) });
+const batchKitSchema = z.array(createKitSchema).min(1).max(5);
 
 function cookieValue(request: Request, name: string): string | undefined {
   const item = request.headers.cookie?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
@@ -129,6 +130,28 @@ export function createApiApp(database: Database, config: ApiConfig) {
       return response.status(202).json({ kit: document ? publicKit(document) : { id: kitId.toHexString(), status: "generating" } });
     } catch (error) { return next(error); }
   });
+  app.post("/kits/batch", requireAuth, async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const inputs = batchKitSchema.parse(request.body);
+      const results = [];
+      for (const input of inputs) {
+        const existing = await database.kits.findOne({ userId: request.userId, fingerprint: fingerprint(input) });
+        if (existing) {
+          results.push(publicKit(existing));
+          continue;
+        }
+        const now = new Date();
+        const created = await database.kits.insertOne({ userId: request.userId!, fingerprint: fingerprint(input), status: "generating", input, kit: null, error: null, createdAt: now, updatedAt: now });
+        const kitId = created.insertedId;
+        void generateKitForCase({ id: kitId.toHexString(), ...input }).then(
+          (kit) => database.kits.updateOne({ _id: kitId }, { $set: { status: "ready", kit, error: null, updatedAt: new Date() } }),
+          (error: unknown) => database.kits.updateOne({ _id: kitId }, { $set: { status: "failed", error: { code: "GENERATION_FAILED", message: error instanceof Error ? error.message : "Unknown error" }, updatedAt: new Date() } }),
+        );
+        results.push({ id: kitId.toHexString(), status: "generating", kit: null, error: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+      }
+      return response.status(202).json({ kits: results });
+    } catch (error) { return next(error); }
+  });
   app.get("/kits/:id", requireAuth, async (request: AuthenticatedRequest, response, next) => {
     try {
       const kitId = objectIdParam(request);
@@ -146,6 +169,35 @@ export function createApiApp(database: Database, config: ApiConfig) {
       const result = await database.kits.findOneAndUpdate({ _id: kitId, userId: request.userId }, { $set: { kit, status: "ready", error: null, updatedAt: new Date() } }, { returnDocument: "after" });
       if (!result) return response.status(404).json({ error: { code: "NOT_FOUND", message: "Kit not found." } });
       return response.json({ kit: publicKit(result) });
+    } catch (error) { return next(error); }
+  });
+  app.get("/kits/:id/progress", requireAuth, async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kitId = objectIdParam(request);
+      if (!kitId) return response.status(404).json({ error: { code: "NOT_FOUND", message: "Kit not found." } });
+      const kit = await database.kits.findOne({ _id: kitId, userId: request.userId });
+      if (!kit) return response.status(404).json({ error: { code: "NOT_FOUND", message: "Kit not found." } });
+      const progress = await database.practiceProgress.findOne({ userId: request.userId, kitId: kitId.toHexString() });
+      return response.json({ confidence: progress?.confidence ?? {} });
+    } catch (error) { return next(error); }
+  });
+  app.put("/kits/:id/progress", requireAuth, async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const kitId = objectIdParam(request);
+      if (!kitId) return response.status(404).json({ error: { code: "NOT_FOUND", message: "Kit not found." } });
+      const kit = await database.kits.findOne({ _id: kitId, userId: request.userId });
+      if (!kit) return response.status(404).json({ error: { code: "NOT_FOUND", message: "Kit not found." } });
+      const input = z.object({ card_id: z.string().min(1), confidence: z.number().int().min(1).max(5) }).parse(request.body);
+      const cardIds = new Set(kit.kit?.flashcards.map((card) => card.id) ?? []);
+      if (!cardIds.has(input.card_id)) return response.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Unknown flashcard." } });
+      const current = await database.practiceProgress.findOne({ userId: request.userId, kitId: kitId.toHexString() });
+      const confidence = { ...(current?.confidence ?? {}), [input.card_id]: input.confidence };
+      await database.practiceProgress.updateOne(
+        { userId: request.userId, kitId: kitId.toHexString() },
+        { $set: { userId: request.userId, kitId: kitId.toHexString(), confidence, updatedAt: new Date() } },
+        { upsert: true },
+      );
+      return response.json({ confidence });
     } catch (error) { return next(error); }
   });
 

@@ -1,6 +1,8 @@
 node_modules/
 dist/
+.next/
 .env
 .env.local
 coverage/
+.tmp/
 examples/kits.json

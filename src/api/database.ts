@@ -27,12 +27,19 @@ export interface KitDocument {
   createdAt: Date;
   updatedAt: Date;
 }
+export interface PracticeProgressDocument {
+  userId: string;
+  kitId: string;
+  confidence: Record<string, number>;
+  updatedAt: Date;
+}
 
 export interface Database {
   users: Collection<UserDocument>;
   sessions: Collection<SessionDocument>;
   revokedAccessTokens: Collection<RevokedAccessTokenDocument>;
   kits: Collection<KitDocument>;
+  practiceProgress: Collection<PracticeProgressDocument>;
   close(): Promise<void>;
 }
 
@@ -44,6 +51,7 @@ export async function connectDatabase(mongoUri: string): Promise<Database> {
   const sessions = database.collection<SessionDocument>("refresh_sessions");
   const revokedAccessTokens = database.collection<RevokedAccessTokenDocument>("revoked_access_tokens");
   const kits = database.collection<KitDocument>("kits");
+  const practiceProgress = database.collection<PracticeProgressDocument>("practice_progress");
   await Promise.all([
     users.createIndex({ email: 1 }, { unique: true }),
     sessions.createIndex({ tokenHash: 1 }, { unique: true }),
@@ -51,8 +59,9 @@ export async function connectDatabase(mongoUri: string): Promise<Database> {
     revokedAccessTokens.createIndex({ jti: 1 }, { unique: true }),
     revokedAccessTokens.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     kits.createIndex({ userId: 1, fingerprint: 1 }, { unique: true }),
+    practiceProgress.createIndex({ userId: 1, kitId: 1 }, { unique: true }),
   ]);
-  return { users, sessions, revokedAccessTokens, kits, close: () => client.close() };
+  return { users, sessions, revokedAccessTokens, kits, practiceProgress, close: () => client.close() };
 }
 
 export function publicUser(user: WithId<UserDocument>): { id: string; email: string } {

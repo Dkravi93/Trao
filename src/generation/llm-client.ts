@@ -9,7 +9,7 @@ function parseJson(content: string): unknown {
 }
 
 /** Resolves one vendor at runtime; call sites depend only on this common chat-completions contract. */
-export function resolveLlmProvider(env = process.env): LlmProviderConfig | null {
+export function resolveLlmProvider(env: Partial<NodeJS.ProcessEnv> = process.env): LlmProviderConfig | null {
   const selected = env.LLM_PROVIDER?.toLowerCase();
   const groq = (): LlmProviderConfig | null => env.GROQ_API_KEY && env.GROQ_MODEL ? { provider: "groq", baseUrl: "https://api.groq.com/openai/v1", apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL } : null;
   const openai = (): LlmProviderConfig | null => env.OPENAI_API_KEY && env.OPENAI_MODEL ? { provider: "openai", baseUrl: "https://api.openai.com/v1", apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL } : null;
